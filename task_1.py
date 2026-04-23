@@ -3,6 +3,8 @@ import pandas as pd
 import streamlit as st
 from PIL import Image
 from datetime import date, timedelta
+import plotly.graph_objects as go
+import prophet as ph
 
 # Page Configuration
 st.set_page_config(page_title="Financial Analysis Dashboard", page_icon="📈", layout="wide")
@@ -58,6 +60,9 @@ start_date_default = today - timedelta(days=days_slider)
 start_date = st.sidebar.date_input("Start Date", value=start_date_default)
 end_date = st.sidebar.date_input("End Date", value=today)
 
+# Checkbox for Prophet (Renamed variable to avoid conflicts)
+run_prophet = st.sidebar.checkbox("Enable Prophet Forecasting")
+
 # Functions
 def display_metrics(latest, high, low, average, delta, currency):
     m1, m2, m3, m4 = st.columns(4)
@@ -71,6 +76,32 @@ def display_metrics(latest, high, low, average, delta, currency):
     m2.metric("Period High", f"{currency}{high:.2f}")
     m3.metric("Period Low", f"{currency}{low:.2f}")
     m4.metric("Average", f"{currency}{average:.2f}")
+
+def create_price_chart(df):
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=df.index, y=df["Close"], mode='lines+markers', 
+                            name='Close Price', line=dict(color='blue', width=2)))
+    fig.update_layout(
+        title="Price Chart",
+        xaxis_title="Date",
+        yaxis_title="Price",
+        template="plotly_dark",
+        height=500
+    )
+    st.plotly_chart(fig, use_container_width=True)
+
+def create_volume_chart(df):
+    fig = go.Figure()
+    fig.add_trace(go.Bar(x=df.index, y=df["Volume"], name='Volume', 
+                        marker_color='orange'))
+    fig.update_layout(
+        title="Trading Volume",
+        xaxis_title="Date",
+        yaxis_title="Volume",
+        template="plotly_dark",
+        height=500
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
 def get_analysis(symbol, start_date, end_date, currency):
     if start_date >= end_date:
@@ -86,7 +117,6 @@ def get_analysis(symbol, start_date, end_date, currency):
         return
 
     # Standardize column names
-    # Note: yfinance returns specific columns, we ensure they are mapped correctly
     df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
     
     st.divider()
@@ -107,17 +137,81 @@ def get_analysis(symbol, start_date, end_date, currency):
     
     st.write("") # Spacing
 
-    # Charts
-    tab1, tab2, tab3 = st.tabs(["Price Chart", "Volume Analysis", "Raw Data"])
+    # Charts & Analysis
+    tab1, tab2, tab3, tab4, tab5 = st.tabs(["Price Chart", "Volume Analysis", "Raw Data", "Advanced Statistics", "Prophet Forecast"])
     
     with tab1:
-        st.line_chart(df["Close"])
+        create_price_chart(df)
     
     with tab2:
-        st.bar_chart(df["Volume"])
+        create_volume_chart(df)
         
     with tab3:
         st.dataframe(df, use_container_width=True)
+
+    with tab4:
+        st.subheader("Key Statistics")
+        
+        # Summary Statistics
+        st.write("Summary Statistics:")
+        st.dataframe(df.describe(), use_container_width=True)
+        
+        st.divider()
+        
+        # Custom Stats
+        col_stat1, col_stat2 = st.columns(2)
+        
+        with col_stat1:
+            st.write("**Price Metrics**")
+            st.metric("Volatility (Std Dev)", f"{df['Close'].std():.2f}")
+            st.metric("Median Price", f"{df['Close'].median():.2f}")
+            
+        with col_stat2:
+            st.write("**Volume Metrics**")
+            st.metric("Total Volume", f"{df['Volume'].sum():,.0f}")
+            max_vol_date = df["Volume"].idxmax().strftime('%Y-%m-%d')
+            st.metric("Highest Volume Day", max_vol_date)
+
+        st.divider()
+
+        # Volatility Analysis
+        variation_coefficient = df["Close"].std() / df["Close"].mean()
+        
+        st.subheader("Volatility Assessment")
+        st.metric("Variation Coefficient", f"{variation_coefficient:.4f}")
+        
+        if variation_coefficient < 0.05:
+            st.success("🟢 **Low Volatility:** Very stable pricing.")
+        elif variation_coefficient < 0.15:
+            st.info("🔵 **Moderate Volatility:** Normal market conditions.")
+        elif variation_coefficient < 0.30:
+            st.warning("🟡 **High Volatility:** Expect price swings.")
+        else:
+            st.error("🔴 **Extreme Volatility:** High risk asset.")
+
+    with tab5: 
+        if run_prophet:
+            with st.spinner('Training Prophet model and generating forecast...'):
+                fb = df.reset_index()
+                fb = fb[["Date", "Close"]]
+                fb.columns = ["ds", "y"]
+                
+                # Crucial step for Prophet: Remove timezone info from the dataframe
+                fb['ds'] = fb['ds'].dt.tz_localize(None)
+                
+                model = ph.Prophet()
+                model.fit(fb)
+                
+                future = model.make_future_dataframe(periods=270)
+                predict = model.predict(future)
+                
+                predict_trend = predict[["ds", "trend"]]
+                predict_trend = predict_trend.set_index("ds")
+                
+                st.subheader("270-Day Trend Forecast")
+                st.line_chart(predict_trend["trend"])
+        else:
+            st.info("👈 Enable 'Prophet Forecasting' in the sidebar to see future predictions.")
 
 # Run Analysis
 get_analysis(symbol, start_date, end_date, currency_symbol)
