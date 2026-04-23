@@ -5,37 +5,37 @@ from PIL import Image
 from datetime import date, timedelta
 
 # Page Configuration
-st.set_page_config(page_title="Financial Analysis", page_icon="📈")
+st.set_page_config(page_title="Financial Analysis Dashboard", page_icon="📈", layout="wide")
 
 # Header Section
-st.title("📊 XYZ Financial Analysis")
+st.title("📊 Financial Markets Analysis")
 
 st.markdown("""
 ### Unlock Insights Through Data
-This application is part of the **Data Visualization and Training** course. 
+This application provides real-time financial data visualization. 
 Explore market trends, historical prices, and volume data for various assets.
 """)
 
 # Sidebar Navigation
-st.sidebar.title("Filters")
-st.sidebar.caption("Your Personal Analyst")
+st.sidebar.title("Configuration")
+st.sidebar.caption("Market Analysis Tools")
 
 try:
     logo = Image.open("finance.png")
-    st.sidebar.image(logo, caption="Filter Options", use_container_width=True)
+    st.sidebar.image(logo, caption="Settings", use_container_width=True)
 except FileNotFoundError:
-    st.sidebar.warning("Logo file not found (finance.png)") 
+    st.sidebar.warning("Logo file (finance.png) not found.") 
 
-# Analysis Logic
-asset_class = st.sidebar.radio("Asset Class", ["Crypto", "Stock Market"])
+# Asset Class Selection
+asset_class = st.sidebar.radio("Select Asset Class", ["Crypto", "Stock Market"])
 
 if asset_class == "Crypto":
     crypto_select = st.sidebar.selectbox(
-        "Select Cryptocurrency",
+        "Choose Cryptocurrency",
         ["BTC", "ETH", "XRP", "DOT", "DOGE", "AVAX", "BNB"]
     )
     symbol = f"{crypto_select}-USD"
-    currency = "$"
+    currency_symbol = "$"
 
 else: 
     stocks = {
@@ -45,80 +45,79 @@ else:
         "AKBANK": "AKBNK.IS",
         "BJK": "BJKAS.IS",
     }
-    currency = "₺"
-
-    stock_select = st.sidebar.selectbox("Select Stock", list(stocks.keys()))
+    currency_symbol = "₺"
+    stock_select = st.sidebar.selectbox("Choose Stock", list(stocks.keys()))
     symbol = stocks[stock_select]
 
 # Date Range Selection
-days_slider = st.sidebar.select_slider("Select Time Range (Days)", options=range(1, 361), value=30)
+st.sidebar.subheader("Date Selection")
+days_slider = st.sidebar.select_slider("Adjust Range (Days)", options=range(1, 361), value=30)
 today = date.today()
-
 start_date_default = today - timedelta(days=days_slider)
 
 start_date = st.sidebar.date_input("Start Date", value=start_date_default)
 end_date = st.sidebar.date_input("End Date", value=today)
 
-
-def get_metric(latest, high, low, average, currency):
-    col1, col2, col3, col4 = st.columns(4)
-    col1.metric(
+# Functions
+def display_metrics(latest, high, low, average, delta, currency):
+    m1, m2, m3, m4 = st.columns(4)
+    
+    m1.metric(
         "Last Price",
         f"{currency}{latest:.2f}",
-        help="The closing price of the most recent selected date."
+        f"{delta:+.2f}%",
+        help="Current price with change since period start"
     )
-    col2.metric(
-        "Period High",
-        f"{currency}{high:.2f}",
-        help="The highest price reached within the selected period."
-    )
-    col3.metric(
-        "Period Low",
-        f"{currency}{low:.2f}",
-        help="The lowest price reached within the selected period."
-    )
-    col4.metric(
-        "Average",
-        f"{currency}{average:.2f}",
-        help="The average closing price over the selected period."
-    )
+    m2.metric("Period High", f"{currency}{high:.2f}")
+    m3.metric("Period Low", f"{currency}{low:.2f}")
+    m4.metric("Average", f"{currency}{average:.2f}")
 
-
-def get_graph(symbol, start_date, end_date, currency):
+def get_analysis(symbol, start_date, end_date, currency):
     if start_date >= end_date:
         st.error("⚠️ Error: Start date must be before the end date!")
         return
 
-    # Fetching Data
+    # Data Fetching
     ticker_data = yf.Ticker(symbol)
     df = ticker_data.history(start=start_date, end=end_date)
 
     if df.empty:
-        st.error(f"No data found for {symbol}. Check the date range or connection.")
+        st.error(f"No data available for {symbol}. Please try a different date range.")
         return
 
-    # Renaming for clarity
-    df.columns = ["Open", "High", "Low", "Close", "Volume", "Dividends", "Stock Splits"]
+    # Standardize column names
+    # Note: yfinance returns specific columns, we ensure they are mapped correctly
+    df = df[['Open', 'High', 'Low', 'Close', 'Volume']]
     
-    st.subheader(f"{symbol} Closing Price Chart")
+    st.divider()
+    st.subheader(f"📈 {symbol} Market Overview")
 
+    # Calculation of metrics
     latest_price = df["Close"].iloc[-1]
     highest_price = df["High"].max()
     lowest_price = df["Low"].min()
     average_price = df["Close"].mean()
-
-    # Display Metrics
-    get_metric(latest_price, highest_price, lowest_price, average_price, currency)
+    first_price = df["Close"].iloc[0]
     
-    # Visualizations
-    st.line_chart(df["Close"])
-    
-    st.subheader("Trading Volume")
-    st.line_chart(df["Volume"])
-    
-    st.subheader("Raw Data")
-    st.dataframe(df)
+    # Growth/Loss calculation
+    performance_delta = ((latest_price - first_price) / first_price) * 100
 
+    # Display Metrics UI
+    display_metrics(latest_price, highest_price, lowest_price, average_price, performance_delta, currency)
+    
+    st.write("") # Spacing
 
-# Execute Function
-get_graph(symbol, start_date, end_date, currency)
+    # Charts
+    tab1, tab2, tab3 = st.tabs(["Price Chart", "Volume Analysis", "Raw Data"])
+    
+    with tab1:
+        st.line_chart(df["Close"])
+    
+    with tab2:
+        st.bar_chart(df["Volume"])
+        
+    with tab3:
+        st.dataframe(df, use_container_width=True)
+
+# Run Analysis
+get_analysis(symbol, start_date, end_date, currency_symbol)
