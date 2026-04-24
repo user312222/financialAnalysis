@@ -60,7 +60,7 @@ start_date_default = today - timedelta(days=days_slider)
 start_date = st.sidebar.date_input("Start Date", value=start_date_default)
 end_date = st.sidebar.date_input("End Date", value=today)
 
-# Checkbox for Prophet (Renamed variable to avoid conflicts)
+# Checkbox for Prophet
 run_prophet = st.sidebar.checkbox("Enable Prophet Forecasting")
 
 # Functions
@@ -196,7 +196,6 @@ def get_analysis(symbol, start_date, end_date, currency):
                 fb = fb[["Date", "Close"]]
                 fb.columns = ["ds", "y"]
                 
-                # Crucial step for Prophet: Remove timezone info from the dataframe
                 fb['ds'] = fb['ds'].dt.tz_localize(None)
                 
                 model = ph.Prophet()
